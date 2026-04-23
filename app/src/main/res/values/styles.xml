@@ -1,0 +1,17 @@
+<resources>
+
+    <!--&lt;!&ndash; Base application theme. &ndash;&gt;-->
+    <style name="AppTheme" parent="android:Theme.NoTitleBar">
+
+    </style>
+
+    <style name="FullscreenTheme" parent="android:Theme.NoTitleBar.Fullscreen">
+
+
+    </style>
+
+    <!--<style name="FullscreenActionBarStyle" parent="">-->
+        <!--<item name="android:background">@color/black_overlay</item>-->
+    <!--</style>-->
+
+</resources>

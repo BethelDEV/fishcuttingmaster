@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <funs.gamez.fishz.helps.SliderPrefs
+        android:defaultValue="90"
+        android:title="音效音量"
+        android:key="sound_effects_volume" />
+
+    <funs.gamez.fishz.helps.SliderPrefs
+        android:defaultValue="20"
+        android:title="背景音乐音量"
+        android:key="music_volume" />
+
+</PreferenceScreen>

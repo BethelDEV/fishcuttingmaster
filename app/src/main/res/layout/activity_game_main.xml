@@ -1,0 +1,33 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mainview"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0099cc"
+    android:hapticFeedbackEnabled="true"
+    tools:context="funs.gamez.fishz.pages.PlayGameActivity">
+
+    <funs.gamez.fishz.game.GameView
+        android:id="@+id/fishscreen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true" />
+
+    <TextView
+        android:id="@+id/pause"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:clickable="true"
+        android:padding="9dp"
+        android:shadowColor="@android:color/background_dark"
+        android:shadowDx="3"
+        android:shadowDy="3"
+        android:shadowRadius="8"
+        android:text="@string/gamepause"
+        android:textColor="@android:color/holo_green_dark"
+        android:textSize="24sp"
+        android:layout_marginLeft="6dp"
+        android:layout_marginStart="6dp" />
+
+</FrameLayout>

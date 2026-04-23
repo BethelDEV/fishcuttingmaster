@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <array name="songs">
+        <item>@raw/grug</item>
+        <item>@raw/grugriffloop</item>
+        <item>@raw/dundunquick</item>
+        <item>@raw/droneriffloop</item>
+        <item>@raw/chugloop</item>
+        <item>@raw/chugloopdrums</item>
+        <item>@raw/drone1</item>
+    </array>
+
+
+
+    <array name="sounds">
+        <item>@raw/puh1</item>
+        <item>@raw/puh2</item>
+        <item>@raw/puh3</item>
+        <item>@raw/bad1</item>
+        <item>@raw/bad2</item>
+        <item>@raw/bad3</item>
+        <item>@raw/good1</item>
+        <item>@raw/down1</item>
+        <item>@raw/up1</item>
+        <item>@raw/dundunquick</item>
+        <item>@raw/prog1</item>
+        <item>@raw/chop1</item>
+        <item>@raw/chop2</item>
+        <item>@raw/chop3</item>
+        <item>@raw/chop4</item>
+
+    </array>
+
+    <string-array name="sounds_usage" translatable="false">
+        <item>puh</item>
+        <item>puh</item>
+        <item>puh</item>
+        <item>bad</item>
+        <item>bad</item>
+        <item>bad</item>
+        <item>good</item>
+        <item>down</item>
+        <item>good</item>
+        <item>better</item>
+        <item>best</item>
+        <item>chop</item>
+        <item>chop</item>
+        <item>chop</item>
+        <item>chop</item>
+    </string-array>
+
+    <integer-array name="sounds_volumes">
+        <item>95</item>
+        <item>95</item>
+        <item>95</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>90</item>
+        <item>70</item>
+        <item>70</item>
+        <item>70</item>
+        <item>70</item>
+    </integer-array>
+
+</resources>

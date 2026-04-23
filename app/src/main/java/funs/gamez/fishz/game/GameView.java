@@ -1,0 +1,841 @@
+package funs.gamez.fishz.game;
+
+import android.content.Context;
+import android.content.res.TypedArray;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.util.AttributeSet;
+import android.util.Log;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.view.View;
+
+import funs.gamez.fishz.R;
+import funs.gamez.fishz.helps.Utils;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Stack;
+
+/**
+ * 游戏示图
+ */
+public class GameView extends SurfaceView implements SurfaceHolder.Callback, SurfaceView.OnTouchListener {
+
+
+    private static final int CONFIG_HEIGHT = 900;
+    private static final int MIN_SWIPE = 40;
+    private static final int SWIPE_OVERSHOOT = 20;
+    private static final int MAX_AXES_REPS = 15;
+    private static final int AXE_TIMEOUT = 50000;
+
+    private final long STEP = 33; // 1000 ms / ~30 fps  =  33
+
+    private final long ONE_SECOND = 1000 / STEP;
+
+    private final long INTERVAL_FRAMES = 10 * ONE_SECOND;
+    private final long INTERVAL_GAP_FRAMES = 2 * ONE_SECOND;
+    private final int INTERVALS = 5;
+
+
+    private final double GRAVITY = 2; //1.53;
+    private final double AIRRESIST = .06;
+
+//    private final double INITIAL_XVMIN = AIRRESIST * 30;
+//    private final double INITIAL_XVMAX = AIRRESIST * 160;
+
+    private final double INITIAL_YVMIN = GRAVITY * -19;
+
+    private final double INITIAL_YVMAX = GRAVITY * -28;
+
+    private final List<FlyingElement> availableItems = new ArrayList<>();
+    private final List<FlyingElement> itemsInPlay = new ArrayList<>();
+    private final Bitmap[] splats = new Bitmap[3];
+    private final Bitmap[] anchor = new Bitmap[1];
+    private final Bitmap[] axes = new Bitmap[1];
+    private final Bitmap[] bgs = new Bitmap[1];
+    private final Bitmap[] fgtops = new Bitmap[1];
+    private final Bitmap[] fgbottoms = new Bitmap[1];
+    private final Bitmap[] bgsScaled = new Bitmap[1];
+    private final Bitmap[] fgtopsScaled = new Bitmap[1];
+    private final Bitmap[] fgbottomsScaled = new Bitmap[1];
+    private final Object mTextLock = new Object();
+    int totalValue;
+    private Paint mLinePaint;
+    private Paint mBGPaint;
+    private Paint mTextPaint;
+    private Paint mBarPaint;
+    private String mScore;
+    private int mLives;
+    private volatile String mText;
+    private PlayThread mThread;
+    private volatile boolean mPaused = false;
+
+    private int mWidth;
+    private int mHeight;
+    private OnGameListener onGameListener;
+    private long mTextStarted;
+
+    private int mIntervalNum = 0;
+    private long mIntervalStarted;
+    private int mWaveNum;
+    private long mWaveStarted;
+    private int mMaxNumFly;
+    private boolean mWaveGoing;
+    private double mShipBob = 0;
+    private final Stack<float[]> mAxes = new Stack<>(); // 旋转轴
+    private float x1;
+    private float y1;
+    private long starttime;
+    private long lastAnchor;
+
+    final private List<Long> hittimes = new ArrayList<>();
+    //private volatile int touchHits;
+    private long mFrameCount;
+
+    private String waveFormat;
+
+    public GameView(Context context) {
+        super(context);
+        init(context);
+    }
+
+    public GameView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init(context);
+    }
+
+    public GameView(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
+        init(context);
+    }
+
+    // 初始化
+    private void init(Context context) {
+        if (this.isInEditMode()) return;
+//        if (!this.isInEditMode()) {
+
+        splats[0] = BitmapFactory.decodeResource(getResources(), R.drawable.splat1);
+        splats[1] = BitmapFactory.decodeResource(getResources(), R.drawable.splat2);
+        splats[2] = BitmapFactory.decodeResource(getResources(), R.drawable.splat2);
+        anchor[0] = BitmapFactory.decodeResource(getResources(), R.drawable.anchor_sm);
+        axes[0] = BitmapFactory.decodeResource(getResources(), R.drawable.axe2);
+        bgs[0] = BitmapFactory.decodeResource(getResources(), R.drawable.sea);
+        fgtops[0] = BitmapFactory.decodeResource(getResources(), R.drawable.sail);
+        fgbottoms[0] = BitmapFactory.decodeResource(getResources(), R.drawable.shipside2);
+
+        final SurfaceHolder holder = getHolder();
+        holder.addCallback(this);
+        TypedArray fish = getResources().obtainTypedArray(R.array.fish);
+        int[] values = getResources().getIntArray(R.array.points);
+        totalValue = 0;
+        for (int i = 0; i < fish.length(); i++) {
+            FlyingElement item = new FlyingElement(BitmapFactory.decodeResource(getResources(), fish.getResourceId(i, 0)));
+            item.setValue(values[i]);
+            availableItems.add(item);
+            totalValue += (100 - values[i]);
+        }
+        fish.recycle();
+
+        this.setOnTouchListener(this);
+        mLinePaint = new Paint();
+        mLinePaint.setARGB(255, 255, 64, 64);
+        mLinePaint.setStrokeWidth(5);
+        mBGPaint = new Paint();
+        mBGPaint.setARGB(255, 127, 127, 200);
+
+        mTextPaint = new Paint();
+        mTextPaint.setColor(Color.YELLOW);
+        mTextPaint.setShadowLayer(8, 8, 8, Color.WHITE);
+        mTextPaint.setTextSize(80);
+
+        mBarPaint = new Paint();
+        mBarPaint.setColor(Color.GRAY);
+        mBarPaint.setShadowLayer(8, 8, 8, Color.YELLOW);
+        mBarPaint.setTextSize(80);
+
+        waveFormat = getResources().getString(R.string.wave_x);
+    }
+
+    // 保存数据
+    public void freeze(Bundle bundle) {
+        pauseGame();
+
+        bundle.putString("mText", mText);
+
+        bundle.putLong("mFrameCount", mFrameCount);
+        bundle.putInt("mWaveNum", mWaveNum);
+        bundle.putLong("mWaveStarted", mWaveStarted);
+        bundle.putLong("mIntervalStarted", mIntervalStarted);
+        bundle.putInt("mMaxNumFly", mMaxNumFly);
+        bundle.putBoolean("mWaveGoing", mWaveGoing);
+
+        bundle.putInt("numItemsInPlay", itemsInPlay.size());
+        for (int i = 0; i < itemsInPlay.size(); i++) {
+            FlyingElement fi = itemsInPlay.get(i);
+            Bundle b = new Bundle();
+            fi.freeze(b);
+            bundle.putBundle("i" + i, b);
+        }
+        Log.d("Fish", bundle.toString());
+    }
+
+    // 读取数据
+    public void unfreeze(Bundle bundle) {
+        mText = bundle.getString("mText");
+
+        mFrameCount = bundle.getLong("mFrameCount");
+        mWaveNum = bundle.getInt("mWaveNum");
+        mWaveStarted = bundle.getLong("mWaveStarted");
+        mIntervalStarted = bundle.getLong("mIntervalStarted");
+        mMaxNumFly = bundle.getInt("mMaxNumFly");
+        mWaveGoing = bundle.getBoolean("mWaveGoing");
+
+
+        int numitems = bundle.getInt("numItemsInPlay");
+        for (int i = 0; i < numitems; i++) {
+            Bundle b = bundle.getBundle("i" + i);
+            if (b != null) {
+                FlyingElement fi = FlyingElement.create(b);
+                if (fi != null) {
+                    itemsInPlay.add(fi);
+                }
+            }
+        }
+        unpauseGame();
+    }
+
+    public void setOnGameListener(OnGameListener onGameListener) {
+        this.onGameListener = onGameListener;
+    }
+
+    public void setText(String text) {
+        synchronized (mTextLock) {
+            mText = text;
+            mTextStarted = mFrameCount;
+        }
+    }
+
+    public void setTopStatus(String score, int lives) {
+        mScore = score;
+        mLives = lives;
+    }
+
+    public void setBonusMode(boolean on) {
+
+    }
+
+    public void startInterval() {
+
+
+        if (mIntervalNum % INTERVALS == 0) {
+            mWaveNum++;
+
+            if (onGameListener != null) {
+                onGameListener.onWaveStart(mWaveNum);
+            }
+            mWaveStarted = mFrameCount;
+            mIntervalNum = 0;
+            if (!TextUtils.isEmpty(waveFormat)) {
+                setText(String.format(waveFormat, mWaveNum));
+            } else {
+                setText(String.valueOf(mWaveNum));
+            }
+//            setText("Wave " + mWaveNum);
+            mWaveGoing = true;
+        }
+        mIntervalNum++;
+        Log.d("FishView", "startInterval " + mIntervalNum + " " + (mFrameCount - mIntervalStarted));
+        mIntervalStarted = mFrameCount;
+        mMaxNumFly = mIntervalNum + 7;
+//        mMaxNumFly = mIntervalNum + 2;
+
+
+        if (onGameListener != null) {
+            onGameListener.onIntervalStart(mIntervalNum);
+        }
+
+    }
+
+    // 根据需要生成飞行元素
+    private void spawnAsNeeded() {
+        if (mWaveGoing) {
+            long now = mFrameCount;
+            if (now - mWaveStarted < INTERVAL_GAP_FRAMES) return;
+
+            long wavespan = mFrameCount - mWaveStarted;
+            if (wavespan < INTERVAL_FRAMES * INTERVALS - INTERVAL_GAP_FRAMES) {
+                long intervalspan = now - mIntervalStarted;
+
+                if (intervalspan > INTERVAL_FRAMES - INTERVAL_GAP_FRAMES) {
+                    //mIntervalStarted = now;
+
+                    if (onGameListener != null) {
+                        onGameListener.onIntervalDone(mIntervalNum);
+                    }
+
+                    return;
+                }
+
+                if (itemsInPlay.size() < mMaxNumFly * (intervalspan / (double) INTERVAL_FRAMES) + .2 && Utils.getRand(100) > 80) {
+                    FlyingElement item = spawnFish();
+                    if (Utils.getRand(0, 100) > 91 || now - lastAnchor > INTERVAL_FRAMES / 2 && wavespan > INTERVAL_FRAMES / 5) {
+                        item.setBitmap(anchor[0]);
+                        item.setBoom(true);
+                        if (Utils.getRand(0, 100) < 70) {
+                            item.setYv(Utils.getRand(0, 100) < 75 ? INITIAL_YVMIN : INITIAL_YVMAX - 2);
+                        } else {
+                            item.setYv(Utils.getRand(INITIAL_YVMAX, INITIAL_YVMIN));
+                        }
+                        lastAnchor = now;
+                    }
+                }
+            } else {
+                if (onGameListener != null) {
+                    onGameListener.onWaveDone(mWaveNum);
+                }
+                mWaveGoing = false;
+            }
+        }
+    }
+
+    // 生成飞行元素
+    private FlyingElement spawnFish() {
+
+        int randomIndex = -1;
+        double random = Math.random() * totalValue;
+        for (int i = 0; i < availableItems.size(); ++i) {
+            random -= (100 - availableItems.get(i).getValue());
+            if (random <= 0.0d) {
+                randomIndex = i;
+                break;
+            }
+        }
+
+        FlyingElement item = FlyingElement.getCopy(availableItems.get(randomIndex));
+        //FlyingElement item = FlyingElement.getCopy(availableItems.get(Utils.getRand(availableItems.size())));
+
+        int xmid = (int) (mWidth / 2 * .9);
+
+        double xvmin = xmid / 100;
+        double xvmax = xmid / 70;
+
+        double xv = Utils.getRand(xvmin, xvmax) * Math.signum(Math.random() * 2 - 1);
+        item.setXv(xv);
+
+
+        if (xv < 0) {
+            item.setX(mWidth - Utils.getRand(xmid) - xmid / 4);
+        } else {
+            item.setX(Utils.getRand(xmid) + xmid / 8);
+        }
+        item.setY(mHeight + 20);
+        item.setYv(Utils.getRand(INITIAL_YVMIN, INITIAL_YVMAX));
+        item.setSpinv((Math.random() - .5) * 45);
+
+        synchronized (itemsInPlay) {
+            itemsInPlay.add(item);
+        }
+        if (onGameListener != null) {
+            onGameListener.onItemLaunch();
+        }
+        return item;
+    }
+
+    // 绘制画面
+    private void doDraw(final Canvas canvas) {
+
+        spawnAsNeeded();  // 根据需要生成飞行元素
+
+        mShipBob += .05;
+        double shipBobSin = Math.sin(mShipBob);
+        double bgBobSin = Math.sin(mShipBob * 1.5);
+
+        drawBackground(canvas, bgBobSin);  // 动态地 绘制背景图片
+
+        markHits(canvas); // 绘制切中
+
+        moveAndDrawItems(canvas);  // 移动和绘制元素
+
+        pareDeadItems(); // 检查飞的元素是否死亡
+
+        drawBottomFG(canvas, shipBobSin);   // 绘制底部背景
+
+        drawFallingItems(canvas); // 绘制落下的元素
+
+        drawTopFG(canvas, shipBobSin); // 绘制顶部背景
+
+        drawScoreboard(canvas); // 绘制得分
+
+        drawLives(canvas);  // 绘制游戏生命值
+
+        drawPopupText(canvas); // 绘制弹出文本
+    }
+
+    // 绘制顶部背景
+    private void drawTopFG(Canvas canvas, double shipBobSin) {
+        int bobfactor = 7;
+
+        int top = -bobfactor;
+        int diff = fgtopsScaled[0].getHeight() - mHeight / 6;
+        if (diff > 0) {
+            top -= diff;
+        }
+
+        canvas.drawBitmap(fgtopsScaled[0], (int) (shipBobSin * 3), top + (int) (shipBobSin * bobfactor), null);
+    }
+
+    // 绘制底部背景
+    private void drawBottomFG(Canvas canvas, double shipBobSin) {
+        int bobfactor = 6;
+
+        int top = Math.min(fgbottomsScaled[0].getHeight() - bobfactor, mHeight / 6);
+
+        canvas.drawBitmap(fgbottomsScaled[0], 0, mHeight - top + (int) (shipBobSin * -bobfactor), null);
+    }
+
+    // 动态地 绘制背景图片
+    private void drawBackground(Canvas canvas, double shipBobSin) {
+        //Rect dst = new Rect(0, (int) (shipBobSin * 10), mWidth, mHeight);
+
+        //canvas.drawBitmap(bgsScaled[0], null, dst, null);
+        canvas.drawBitmap(bgsScaled[0], 0, (int) (shipBobSin * 10), null);
+
+        //canvas.drawPaint(mBGPaint);
+    }
+
+    // 绘制弹出文字
+    private void drawPopupText(Canvas canvas) {
+        synchronized (mTextLock) {
+            if (mText != null) {
+                float[] widths = new float[mText.length()];
+                mTextPaint.getTextWidths(mText, widths);
+                float sum = 0;
+                for (float w : widths) {
+                    sum += w;
+                }
+
+                canvas.drawText(mText, mWidth / 2 - sum / 2, mHeight / 3, mTextPaint);
+                if (mFrameCount - mTextStarted > ONE_SECOND * 1.5) {
+                    mText = null;
+                }
+            }
+
+        }
+    }
+
+    // 绘制游戏生命值
+    private void drawLives(Canvas canvas) {
+
+        for (int i = 1; i <= mLives; i++) {
+            canvas.drawBitmap(axes[0], mWidth - (i * axes[0].getWidth() + 2), 10, null);
+        }
+    }
+
+    // 绘制得分
+    private void drawScoreboard(Canvas canvas) {
+        if (mScore != null) {
+            canvas.drawText(mScore, 35, 10 + mBarPaint.getTextSize(), mBarPaint);
+//            canvas.drawText(mScore, 10, mTextPaint.getTextSize(), mTextPaint);
+        }
+    }
+
+    // 绘制落下的元素
+    private void drawFallingItems(Canvas canvas) {
+        synchronized (itemsInPlay) {
+//            在这里绘制物品，这样它们就会落在 底部栏 前景上。
+            for (Iterator<FlyingElement> it = itemsInPlay.iterator(); it.hasNext(); ) {
+                FlyingElement item = it.next();
+
+                if (item.getYv() > 0 && !item.wasHit() && !item.isBoom()) {
+                    item.draw(canvas);
+                }
+            }
+        }
+    }
+
+    // 检查飞的元素是否死亡
+    private void pareDeadItems() {
+        // 移除已死亡的元素
+        if (itemsInPlay.size() > 12) {
+            int num = 0;
+            synchronized (itemsInPlay) {
+                for (Iterator<FlyingElement> it = itemsInPlay.listIterator(2); it.hasNext(); ) {
+                    FlyingElement item = it.next();
+                    if (item.wasHit()) {
+                        it.remove();
+                        if (num++ > 4) {
+                            break;
+                        }
+
+                    }
+                }
+            }
+            Log.d("f", "removed " + num + " items early");
+        }
+    }
+
+    // 移动和绘制元素
+    private void moveAndDrawItems(Canvas canvas) {
+        synchronized (itemsInPlay) {
+            for (Iterator<FlyingElement> it = itemsInPlay.iterator(); it.hasNext(); ) {
+                FlyingElement item = it.next();
+                item.updatePosition(GRAVITY * CONFIG_HEIGHT / mHeight, AIRRESIST);
+                if (item.getY() > mHeight && item.getYv() > 0 || item.getX() < 0 || item.getX() > mWidth) {
+                    if (!item.isBoom() && !item.wasHit() && onGameListener != null) {
+                        onGameListener.onMiss(item.getValue());
+                    }
+                    //Log.d("fly", "lived " + item.count);
+                    it.remove();
+                } else if (item.getYv() <= 0 || item.wasHit() || item.isBoom()) {
+
+                    item.draw(canvas);
+                }
+            }
+        }
+    }
+
+    // 绘制命中
+    private void markHits(Canvas canvas) {
+        int times = 0;
+        int points = 0;
+
+        while (mAxes.size() > 0 && times++ < MAX_AXES_REPS) {
+            float[] axe = mAxes.pop();
+
+            if (axe != null) {
+                for (int i = 0; i < axe.length - 4; i += 2) {
+                    if (axe[i + 3] > 0) {
+                        canvas.drawLine(axe[i], axe[i + 1], axe[i + 2], axe[i + 3], mLinePaint);
+                        synchronized (itemsInPlay) {
+                            List<FlyingElement[]> newItems = new ArrayList<>();
+                            for (Iterator<FlyingElement> it = itemsInPlay.iterator(); it.hasNext(); ) {
+                                FlyingElement item = it.next();
+                                if (item.isHit(axe[i], axe[i + 1])) {
+                                    if (item.isBoom()) {
+                                        if (onGameListener != null) onGameListener.onBoom();
+                                        it.remove();
+                                        break;
+                                    }
+                                    synchronized (hittimes) {
+                                        hittimes.add(System.currentTimeMillis());
+                                    }
+                                    item.setHit();
+                                    newItems.add(item.cut(axe[i], axe[i + 1]));
+                                    //it.remove();
+                                    int s = Utils.getRand(splats.length);
+                                    item.setBitmap(splats[s]);
+                                    item.setYv(3);
+                                    item.setXv(item.getXv() / 2);
+                                    item.setSpinv(1);
+                                    //canvas.drawBitmap(splats[s],(float)item.getX()-splats[0].getWidth()/2, (float)item.getY()-splats[0].getHeight()/2, null);
+                                    points += item.getValue();
+                                    if (onGameListener != null) {
+                                        onGameListener.onItemHit(points);
+                                    }
+                                }
+                            }
+                            for (FlyingElement[] fa : newItems) {
+                                for (FlyingElement f : fa) {
+                                    itemsInPlay.add(0, f);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        checkCombo(true);
+
+        if (mAxes.size() > 3) mAxes.clear();
+    }
+
+    // 检查连击
+    private void checkCombo(boolean usemin) {
+
+        if (hittimes.size() > 0) {
+
+            synchronized (hittimes) {
+                int hits = 0;
+                long now = System.currentTimeMillis();
+                for (Iterator<Long> timeit = hittimes.listIterator(); timeit.hasNext(); ) {
+                    long diff = now - timeit.next();
+                    if ((!usemin || diff > 500) && diff < 1000) {
+                        hits++;
+                    } else if (diff >= 1000) {
+                        timeit.remove();
+                    }
+                    //Log.d("GGG", "" + diff);
+                }
+
+                if (hits > 2 && onGameListener != null) {
+                    onGameListener.onCombo(hits);
+                    hittimes.clear();
+                }
+            }
+        }
+
+//        long diff = mFrameCount - firstHitTime;
+//        if ((!usemin || diff > ONE_SECOND/2) && diff <= ONE_SECOND && touchHits>2) {
+//            if (onGameListener !=null) onGameListener.onCombo(touchHits);
+//            touchHits = 0;
+//        } else if (touchHits>0 && diff > ONE_SECOND) {
+//            touchHits = 0;
+//        }
+    }
+
+
+    @Override
+    public boolean onTouch(View view, MotionEvent e) {
+
+        if (mPaused) return true;
+
+        float x0 = e.getX();
+        float y0 = e.getY();
+        //Log.d("f", e.getAction() + " " + x + " ," + y);
+        switch (e.getAction()) {
+            case MotionEvent.ACTION_MOVE:
+
+                if (System.currentTimeMillis() - starttime > AXE_TIMEOUT) {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    return true;
+                }
+
+                double dx = x0 - x1;
+                double dy = y0 - y1;
+                double dist = Math.sqrt(dx * dx + dy * dy);
+                //Log.d("f", e.getAction() + " " + speed);
+                if (dist > MIN_SWIPE) {
+                    int num = SWIPE_OVERSHOOT;
+                    float[] axe = new float[num * 2];
+
+                    int pos = 0;
+                    for (int ti = -num / 2; ti < 10 + num / 2; ti += 2) {
+                        float t = ti / 10f;
+                        int xt = (int) ((1 - t) * x0 + t * x1);
+                        int yt = (int) ((1 - t) * y0 + t * y1);
+                        axe[pos] = xt;
+                        axe[pos + 1] = yt;
+                        pos += 2;
+                    }
+                    mAxes.push(axe);
+                }
+                //}
+                break;
+
+
+            case MotionEvent.ACTION_UP:
+                checkCombo(false); // 检查连击
+//                if ((touchHits>2) && onGameListener !=null) {
+//                    onGameListener.onCombo(touchHits);
+//                }
+
+            case MotionEvent.ACTION_DOWN:
+                starttime = System.currentTimeMillis();
+                synchronized (hittimes) {
+                    hittimes.clear();
+                }
+
+        }
+
+        x1 = x0;
+        y1 = y0;
+        return false;
+
+    }
+
+
+    @Override
+    public void surfaceCreated(SurfaceHolder surfaceHolder) {
+
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder surfaceHolder, final int format, final int width, final int height) {
+        mWidth = width;
+        mHeight = height;
+
+        // 加载背景
+        for (int b = 0; b < bgs.length; b++) {
+            int bgw = bgs[b].getWidth();
+            int bgh = bgs[b].getHeight();
+            int bgw2 = (int) (bgw / (double) bgh * mHeight);
+
+            Rect src = new Rect(bgw > mWidth ? Utils.getRand(bgw - mWidth - 1) : 0, 0, bgw, bgh);
+            Rect dest = new Rect(0, 0, b == 0 ? mWidth : bgw2, mHeight);
+
+            bgsScaled[b] = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bgsScaled[b]);
+            c.drawBitmap(bgs[b], src, dest, null);
+        }
+
+        // 加载顶部前景
+        for (int b = 0; b < fgtops.length; b++) {
+            int bgw = fgtops[b].getWidth();
+            int bgh = fgtops[b].getHeight();
+            int bgh2 = (int) (bgh / (double) bgw * mWidth);
+
+            Rect src = new Rect(0, 0, bgw, bgh);
+            Rect dest = new Rect(0, 0, mWidth, bgh2);
+
+            fgtopsScaled[b] = Bitmap.createBitmap(mWidth, bgh2, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(fgtopsScaled[b]);
+            c.drawBitmap(fgtops[b], src, dest, null);
+        }
+
+        // 加载底部前景
+        for (int b = 0; b < fgbottoms.length; b++) {
+            int bgw = fgbottoms[b].getWidth();
+            int bgh = fgbottoms[b].getHeight();
+            int bgh2 = (int) (bgh / (double) bgw * mWidth);
+
+            Rect src = new Rect(0, 0, bgw, bgh);
+            Rect dest = new Rect(0, 0, mWidth, bgh2);
+
+            fgbottomsScaled[b] = Bitmap.createBitmap(mWidth, bgh2, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(fgbottomsScaled[b]);
+            c.drawBitmap(fgbottoms[b], src, dest, null);
+        }
+
+        Log.d("dimen", mWidth + "x" + mHeight);
+        if (mThread != null) {
+            mThread.stopRunning();
+        }
+        mThread = new PlayThread(surfaceHolder);
+        mThread.start();
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
+        if (mThread != null && mThread.isRunning()) {
+            mThread.stopRunning();
+        }
+        mThread = null;
+    }
+
+    // 暂停
+    public void pauseGame() {
+        if (mThread != null) mPaused = true;
+    }
+
+    // 恢复
+    public void unpauseGame() {
+        if (mThread == null) {
+            mThread = new PlayThread(getHolder());
+        }
+        mPaused = false;
+    }
+
+    public void endGame() {
+        if (mThread != null) {
+            mPaused = true;
+            mThread.stopRunning();
+        }
+    }
+
+    // 游戏监听接口
+    public interface OnGameListener {
+        // 一波开始
+        void onWaveStart(int wavenum);
+
+        // 一波结束
+        void onWaveDone(int wavenum);
+
+        void onIntervalStart(int intervalnum);
+
+        void onIntervalDone(int intervalnum);
+
+        // 一条鱼
+        void onItemLaunch();
+
+        // 击
+        void onItemHit(int points);
+
+        // 连击。连切几条鱼
+        void onCombo(int hits);
+
+        // 没切到
+        void onMiss(int points);
+
+        // 切到铁了
+        void onBoom();
+    }
+
+    // 游戏线程
+    final class PlayThread extends Thread {
+
+        private final SurfaceHolder mSurfaceHolder;
+
+        private volatile boolean mRun = false;
+
+        public PlayThread(final SurfaceHolder surfaceHolder) {
+            mSurfaceHolder = surfaceHolder;
+        }
+
+        @Override
+        public void run() {
+            Log.d("RunThread", "run");
+            mRun = true;
+            try {
+                while (mRun) {
+                    if (mPaused) {
+                        try {
+                            sleep(100);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    } else {
+                        final long start = System.currentTimeMillis();
+
+                        if (mFrameCount % INTERVAL_FRAMES == 0) {
+                            startInterval();
+                        }
+                        mFrameCount++;
+
+                        Canvas c = null;
+                        try {
+                            c = mSurfaceHolder.lockCanvas();
+                            if (mRun && !mPaused) {
+                                doDraw(c);
+                            }
+
+                        } finally {
+                            if (c != null) {
+                                mSurfaceHolder.unlockCanvasAndPost(c);
+                            }
+                        }
+                        long runtime = System.currentTimeMillis() - start;
+
+                        if (runtime < STEP) {
+                            Thread.sleep(STEP - runtime);
+                        }
+                    }
+                }
+            } catch (InterruptedException e) {
+                Log.e("FishLoop", "Mainloop interrupted");
+            }
+        }
+
+
+        public void stopRunning() {
+            Log.d("RunThread", "stopRunning");
+            mRun = false;
+        }
+
+        public boolean isRunning() {
+            return mRun;
+        }
+    }
+
+
+}
